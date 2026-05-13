@@ -1,0 +1,21 @@
+services:
+  libraryit-server:
+    build: .
+    container_name: libraryit-server
+    ports:
+      - "1445:445"
+      - "1139:139"
+    volumes:
+      - ./data:/libraryit
+      - ./logs:/var/log/libraryit
+    restart: always
+
+  libraryit-logger:
+    image: alpine:latest
+    container_name: libraryit-logger
+    depends_on:
+      - libraryit-server
+    volumes:
+      - ./logs:/logs
+    command: sh -c "tail -f /logs/libraryit.log"
+    restart: always
