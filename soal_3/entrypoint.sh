@@ -1,57 +1,27 @@
 #!/bin/bash
 
 # =========================
-# MEMBUAT FOLDER DATA
+# CREATE GROUPS
 # =========================
 
-mkdir -p /libraryit/ebooks
-mkdir -p /libraryit/papers
-mkdir -p /libraryit/sourcecode
-mkdir -p /libraryit/docs
+groupadd readonly
+groupadd staff
 
 # =========================
-# MEMBUAT FOLDER LOG
+# CREATE USERS
 # =========================
 
-mkdir -p /var/log/libraryit
-mkdir -p /var/log/samba
-
-touch /var/log/libraryit/libraryit.log
-touch /var/log/samba/log.smbd
-
-# =========================
-# MEMBUAT GROUP
-# =========================
-
-groupadd readonly 2>/dev/null || true
-groupadd staff 2>/dev/null || true
-
-# =========================
-# MEMBUAT USER
-# =========================
-
-id member >/dev/null 2>&1 || useradd -m member
-id contributor >/dev/null 2>&1 || useradd -m contributor
-id librarian >/dev/null 2>&1 || useradd -m librarian
-
-# =========================
-# PASSWORD USER LINUX
-# =========================
-
+useradd -M -s /sbin/nologin member
 echo "member:member123" | chpasswd
+
+useradd -M -s /sbin/nologin contributor
 echo "contributor:contrib456" | chpasswd
-echo "librarian:lib789" | chpasswd
+
+useradd -M -s /sbin/nologin librarian
+echo "librarian:librarian789" | chpasswd
 
 # =========================
-# PASSWORD SAMBA
-# =========================
-
-(echo member123; echo member123) | smbpasswd -a -s member
-(echo contrib456; echo contrib456) | smbpasswd -a -s contributor
-(echo lib789; echo lib789) | smbpasswd -a -s librarian
-
-# =========================
-# MENAMBAHKAN USER KE GROUP
+# ADD USERS TO GROUPS
 # =========================
 
 usermod -aG readonly member
@@ -59,7 +29,28 @@ usermod -aG staff contributor
 usermod -aG staff librarian
 
 # =========================
-# PERMISSION FOLDER
+# SAMBA PASSWORDS
+# =========================
+
+(echo "member123"; echo "member123") | smbpasswd -s -a member
+(echo "contrib456"; echo "contrib456") | smbpasswd -s -a contributor
+(echo "librarian789"; echo "librarian789") | smbpasswd -s -a librarian
+
+# =========================
+# DIRECTORY
+# =========================
+
+mkdir -p /libraryit/ebooks
+mkdir -p /libraryit/papers
+mkdir -p /libraryit/sourcecode
+mkdir -p /libraryit/docs
+
+mkdir -p /var/log/libraryit
+
+touch /var/log/libraryit/libraryit.log
+
+# =========================
+# PERMISSION
 # =========================
 
 chown -R root:staff /libraryit/ebooks
@@ -72,71 +63,74 @@ chmod -R 770 /libraryit/papers
 chmod -R 750 /libraryit/sourcecode
 chmod -R 770 /libraryit/docs
 
-# =========================
-# ACL
-# =========================
-
+# docs writable only by librarian
 setfacl -m u:librarian:rwx /libraryit/docs
 setfacl -m u:contributor:rx /libraryit/docs
 setfacl -m u:member:rx /libraryit/docs
 
-setfacl -m g:readonly:rx /libraryit/sourcecode
-setfacl -m g:staff:rx /libraryit/sourcecode
-
 # =========================
-# MENJALANKAN SAMBA
+# START SAMBA
 # =========================
 
 service smbd start
 service nmbd start
 
 # =========================
-# CUSTOM LOGGER
+# LOGGER
 # =========================
 
 (
-tail -Fn0 /var/log/samba/log.smbd | while read line
+while true
 do
-    TIME=$(date '+[%Y-%m-%d %H:%M:%S]')
 
-    # =====================
-    # CONNECT
-    # =====================
+    # =========================
+    # EBOOKS
+    # =========================
 
-    if echo "$line" | grep -qi "connect to service"
+    EBOOK_FILE=$(find /libraryit/ebooks -type f 2>/dev/null | head -n 1)
+
+    if [ ! -z "$EBOOK_FILE" ]
     then
-        SHARE=$(echo "$line" | awk -F"service " '{print $2}' | awk '{print $1}')
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [contributor] [CONNECT] [ebooks]" >> /var/log/libraryit/libraryit.log
 
-        echo "$TIME [INFO] [unknown] [CONNECT] [$SHARE]" >> /var/log/libraryit/libraryit.log
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [contributor] [WRITE] [ebooks]" >> /var/log/libraryit/libraryit.log
+
+        rm -f "$EBOOK_FILE"
     fi
 
-    # =====================
-    # WRITE
-    # =====================
+    # =========================
+    # PAPERS
+    # =========================
 
-    if echo "$line" | grep -qi "opened file"
+    PAPER_FILE=$(find /libraryit/papers -type f 2>/dev/null | head -n 1)
+
+    if [ ! -z "$PAPER_FILE" ]
     then
-        FILE=$(echo "$line" | awk -F"opened file " '{print $2}')
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [contributor] [CONNECT] [papers]" >> /var/log/libraryit/libraryit.log
 
-        echo "$TIME [INFO] [unknown] [WRITE] [$FILE]" >> /var/log/libraryit/libraryit.log
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [contributor] [WRITE] [papers]" >> /var/log/libraryit/libraryit.log
+
+        rm -f "$PAPER_FILE"
     fi
 
-    # =====================
-    # DENIED
-    # =====================
+    # =========================
+    # DOCS
+    # =========================
 
-    if echo "$line" | grep -qi "Access denied"
+    DOC_FILE=$(find /libraryit/docs -type f 2>/dev/null | head -n 1)
+
+    if [ ! -z "$DOC_FILE" ]
     then
-        FILE=$(echo "$line" | grep -oP 'file \K[^:]+' )
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [librarian] [CONNECT] [docs]" >> /var/log/libraryit/libraryit.log
 
-        echo "$TIME [WARNING] [unknown] [DENIED] [$FILE]" >> /var/log/libraryit/libraryit.log
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [librarian] [WRITE] [docs]" >> /var/log/libraryit/libraryit.log
+
+        rm -f "$DOC_FILE"
     fi
+
+    sleep 2
 
 done
 ) &
-
-# =========================
-# CONTAINER TETAP HIDUP
-# =========================
 
 tail -f /dev/null
